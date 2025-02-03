@@ -7,6 +7,7 @@ import time
 from tqdm import tqdm 
 import miniaudio
 from msvcrt import getwch
+import ffmpeg
 
 class AsciiProcess(object):
     def __init__(self, video_path, new_width, cache_dir=".", ratio=0.5, ASCII_CHARS = [".", ",", ":", ";", "+", "*", "?", "%", "S", "#", "@"]):
@@ -29,15 +30,15 @@ class AsciiProcess(object):
                 raise ValueError("缓存目录 {} 已存在，但不是一个目录".format(self.cache_dir))
             if not os.access(self.cache_dir, os.W_OK):
                 raise ValueError("缓存目录 {} 不可写, 请重新设置缓存目录".format(self.cache_dir))
-            if os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_ascii.npy")) and  \
-            os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_color.npy")) and \
-                os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_metadata.npy")):
-                print(f"已存在处理好的字符画文件 {self.video_name}.npy, 跳过处理")
-                print(f"已存在处理好的彩色帧文件 {self.video_name}_color.npy, 跳过处理")
-                print(f"已存在处理好的元数据文件 {self.video_name}_metadata.npy, 跳过处理")
+            if os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_ascii_{self.new_width}.npy")) and  \
+            os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_color_{self.new_width}.npy")) and \
+                os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_metadata_{self.new_width}.npy")):
+                print(f"已存在处理好的字符画文件 {self.video_name}_ascii_{self.new_width}.npy, 跳过处理")
+                print(f"已存在处理好的彩色帧文件 {self.video_name}_color.npy_{self.new_width}, 跳过处理")
+                print(f"已存在处理好的元数据文件 {self.video_name}_metadata.npy_{self.new_width}, 跳过处理")
                 flag1 = True
-            if os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_audio.mp3")):
-                print(f"已存在处理好的音频文件 {self.video_name}_audio.mp3, 跳过处理")
+            if os.path.exists(os.path.join(self.cache_dir, f"{self.video_name}_audio_{self.new_width}.mp3")):
+                print(f"已存在处理好的音频文件 {self.video_name}_audio_{self.new_width}.mp3, 跳过处理")
                 flag2 = True
         
         # 处理音频和视频的时候，在终端显示旋转的光标
@@ -89,11 +90,10 @@ class AsciiProcess(object):
         """
         使用 ffmpeg 提取音频部分
         """
-        audio_save_path = os.path.join(self.cache_dir, f"{self.video_name}_audio.mp3")
+        audio_save_path = os.path.join(self.cache_dir, f"{self.video_name}_audio_{self.new_width}.mp3")
         # 直接使用 ffmpeg 提取音频流并保存为mp3文件
         # 这个需要保证 ffmpeg 已经安装在系统中,并且已经配置好环境变量
-        command = f"ffmpeg -i {self.video_path} -q:a 0 -map a {audio_save_path} -loglevel quiet"
-        os.system(command)
+        ffmpeg.input(self.video_path).output(audio_save_path).run()
         print("音频已保存在 {}".format(audio_save_path))
         
         return audio_save_path
@@ -125,12 +125,12 @@ class AsciiProcess(object):
             
         ## 保存字符画处理结果
         ascii_frames = np.array(ascii_frames)
-        ascii_save_path = os.path.join(self.cache_dir, f"{self.video_name}_ascii.npy")
+        ascii_save_path = os.path.join(self.cache_dir, f"{self.video_name}_ascii_{self.new_width}.npy")
         np.save(ascii_save_path, ascii_frames)
         
         ## 保存resize后的彩色帧 （存储颜色信息）
         color_frames = np.array(color_frames)
-        color_save_path = os.path.join(self.cache_dir, f"{self.video_name}_color.npy")
+        color_save_path = os.path.join(self.cache_dir, f"{self.video_name}_color_{self.new_width}.npy")
         np.save(color_save_path, color_frames)
         print("彩色帧已保存在 {}".format(color_save_path))
         
@@ -139,7 +139,7 @@ class AsciiProcess(object):
             "fps": fps,
             "frame_count": len(ascii_frames)
         }
-        metadata_save_path = os.path.join(self.cache_dir, f"{self.video_name}_metadata.npy")
+        metadata_save_path = os.path.join(self.cache_dir, f"{self.video_name}_metadata_{self.new_width}.npy")
         np.save(metadata_save_path, metadata)
         
         self.cap.release()  # 释放视频文件
@@ -303,7 +303,7 @@ class AsciiVideoPlayer:
 
 if __name__ == "__main__":
     video_path = "./badapple.mp4"
-    new_width = 130
+    new_width = 100
     cache_dir = "./cache"
     ascii_process = AsciiProcess(video_path, new_width, cache_dir)
     ascii_path, color_path, metadata_path, audio_path = ascii_process.process()
