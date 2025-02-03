@@ -311,4 +311,6 @@ if __name__ == "__main__":
     ascii_player = AsciiVideoPlayer(ascii_path, color_path, audio_path, metadata_path)
     
     ascii_player.play()
+    print("播放结束, 按任意键退出")
+    getwch()
 
