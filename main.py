@@ -6,6 +6,7 @@ import threading
 import time
 from tqdm import tqdm 
 import miniaudio
+from msvcrt import getwch
 
 class AsciiProcess(object):
     def __init__(self, video_path, new_width, cache_dir=".", ratio=0.5, ASCII_CHARS = [".", ",", ":", ";", "+", "*", "?", "%", "S", "#", "@"]):
@@ -204,14 +205,26 @@ class AsciiVideoPlayer:
       
     def clear_screen(self):
         os.system("cls" if os.name == "nt" else "clear")  # 清屏命令,跨平台
+        sys.stdout.flush()
+        
+    def hide_cursor(self):
+        sys.stdout.write("\033[?25l")  # 隐藏光标
         
     def render_frame(self, frame_index):
         """
-        在终端中渲染指定帧
+        在终端中渲染指定帧(彩色)，防止屏幕闪烁
         """
-        self.clear_screen()
-        print("\n".join(["".join(frame) for frame in self.ascii_frames[frame_index]])
-        )
+        # 使用 ANSI 转义序列移动光标而不是清屏 -> 避免屏幕闪烁
+        sys.stdout.write("\033[H")  # 将光标移动到左上角
+        ascii_frame = self.ascii_frames[frame_index]
+        color_frame = self.color_frames[frame_index]
+        
+        for i, row in enumerate(ascii_frame):
+            for j, char in enumerate(row):
+                b, g, r = color_frame[i, j]
+                sys.stdout.write(f"\033[38;2;{r};{g};{b}m{char}")
+            sys.stdout.write("\n")
+        sys.stdout.flush()
 
     def play_audio(self):
         stream = miniaudio.stream_file(self.audio_path)
@@ -231,6 +244,9 @@ class AsciiVideoPlayer:
 
     def play_video(self):
         self.playing = True
+        self.clear_screen()  # 只在播放开始时清屏
+        self.hide_cursor()  # 播放开始时隐藏光标
+        
         start_time = time.perf_counter()
         
         #！ 播放视频时，此处可以使用简单的循环来控制播放和暂停，但是为了形式一致，使用了条件变量
@@ -266,7 +282,7 @@ class AsciiVideoPlayer:
         # 主线程等待用户信号
         while self.playing:   # 播放中,如果播放结束了，会自动退出循环
             try:
-                user_input = input()
+                user_input = getwch()  # 线程阻塞且无回显
                 if user_input == "p":
                     self.pause = not self.pause
                     if not self.pause:
@@ -287,7 +303,7 @@ class AsciiVideoPlayer:
 
 if __name__ == "__main__":
     video_path = "./badapple.mp4"
-    new_width = 60
+    new_width = 130
     cache_dir = "./cache"
     ascii_process = AsciiProcess(video_path, new_width, cache_dir)
     ascii_path, color_path, metadata_path, audio_path = ascii_process.process()
