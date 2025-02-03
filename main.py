@@ -271,7 +271,7 @@ class AsciiVideoPlayer:
                     self.pause = not self.pause
                     if not self.pause:
                         with self.pause_cond:
-                            self.pause_cond.notify()
+                            self.pause_cond.notify_all()
                 elif user_input == "q":
                     self.playing = False
                     break
