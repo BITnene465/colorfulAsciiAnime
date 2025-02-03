@@ -218,12 +218,13 @@ class AsciiVideoPlayer:
         device = miniaudio.PlaybackDevice()
         device.start(stream)  # 非阻塞播放
         
+        #! 播放音频的时候，需要用条件变量来控制设备的暂停和启动
         while self.playing:
             if self.pause:
-                device.pause()
+                device.stop()
                 with self.pause_cond:
                     self.pause_cond.wait()
-                device.resume()
+                device.start(stream)    # 继续播放
             time.sleep(0.1)   # 减少 cpu 占用
         
         device.close()
@@ -231,10 +232,13 @@ class AsciiVideoPlayer:
     def play_video(self):
         self.playing = True
         start_time = time.perf_counter()
+        
+        #！ 播放视频时，此处可以使用简单的循环来控制播放和暂停，但是为了形式一致，使用了条件变量
         while self.playing:
             if self.pause:   # 暂停播放
-                time.sleep(0.1)  # 减少cpu占用
-                continue
+                with self.pause_cond:
+                    self.pause_cond.wait()
+                start_time = time.perf_counter() - (self.frame_index / self.fps)  # 保持暂停时的时间
             
             current_time = time.perf_counter()
             elapsed_time = current_time - start_time
