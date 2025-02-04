@@ -10,7 +10,7 @@ from msvcrt import getwch
 import ffmpeg
 
 class AsciiProcess(object):
-    def __init__(self, video_path, new_width, cache_dir=".", ratio=0.5, ASCII_CHARS = [".", ",", ":", ";", "+", "*", "?", "%", "S", "#", "@"]):
+    def __init__(self, video_path, new_width, cache_dir=".", ratio=0.5, ASCII_CHARS = [".", ",", "\'", "\"", ":", ";", "+", "=", "*", "?", "S", "M", "H","W","Q", "B", "%", "$", "&", "#", "@"]):
         self.video_path = video_path
         self.new_width = new_width
         self.ASCII_CHARS = ASCII_CHARS
@@ -71,16 +71,16 @@ class AsciiProcess(object):
             
             spin_thread.join()
         else:
-            audio_save_path = os.path.join(self.cache_dir, f"{self.video_name}_audio.mp3")
+            audio_save_path = os.path.join(self.cache_dir, f"{self.video_name}_audio_{self.new_width}.mp3")
             
         # 处理视频部分
         if not flag1:
             print("开始处理视频部分 ...", end="")
             ascii_save_path, color_save_path, metadata_save_path = self.process_video()
         else:
-            ascii_save_path = os.path.join(self.cache_dir, f"{self.video_name}_ascii.npy")
-            color_save_path = os.path.join(self.cache_dir, f"{self.video_name}_color.npy")
-            metadata_save_path = os.path.join(self.cache_dir, f"{self.video_name}_metadata.npy")
+            ascii_save_path = os.path.join(self.cache_dir, f"{self.video_name}_ascii_{self.new_width}.npy")
+            color_save_path = os.path.join(self.cache_dir, f"{self.video_name}_color_{self.new_width}.npy")
+            metadata_save_path = os.path.join(self.cache_dir, f"{self.video_name}_metadata_{self.new_width}.npy")
         
         print("预处理完成")
         
@@ -93,7 +93,7 @@ class AsciiProcess(object):
         audio_save_path = os.path.join(self.cache_dir, f"{self.video_name}_audio_{self.new_width}.mp3")
         # 直接使用 ffmpeg 提取音频流并保存为mp3文件
         # 这个需要保证 ffmpeg 已经安装在系统中,并且已经配置好环境变量
-        ffmpeg.input(self.video_path).output(audio_save_path).run()
+        ffmpeg.input(self.video_path).output(audio_save_path).run(quiet=True, overwrite_output=True)  # quiet=True 静默运行，不输出信息
         print("音频已保存在 {}".format(audio_save_path))
         
         return audio_save_path
@@ -117,11 +117,12 @@ class AsciiProcess(object):
                 break
             
             resized_frame = self.resize_image(frame)
-            grayscale_frame = self.grayify(resized_frame)
+            brighter_frame = self.brighten_image(resized_frame)
+            grayscale_frame = self.grayify(brighter_frame)
             ascii_str_array = self.pixels_to_ascii(grayscale_frame)
             
             ascii_frames.append(ascii_str_array)
-            color_frames.append(resized_frame)
+            color_frames.append(brighter_frame)
             
         ## 保存字符画处理结果
         ascii_frames = np.array(ascii_frames)
@@ -159,6 +160,16 @@ class AsciiProcess(object):
         resized_image = cv2.resize(image, (self.new_width, new_height), interpolation=cv2.INTER_LINEAR)
         return resized_image
         
+    def brighten_image(self, image):
+        """
+        传入BGR图像，把图像亮度增加50%
+        rtype: ndarray(ndim=3, dtype=uint8)
+        """
+        hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        hsv_image[:, :, 2] = np.minimum(hsv_image[:, :, 2] * 1.5, 255)
+        brighter_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
+        return brighter_image
+    
     def grayify(self, image):
         """
         传入BGR图像，返回灰度图像
@@ -200,29 +211,44 @@ class AsciiVideoPlayer:
         self.frame_index = 0
         self.playing = False
         self.pause = False
-        
-        self.pause_cond = threading.Condition()
+        self.pause_cond = threading.Condition()  # 条件变量，用于控制播放和暂停
       
     def clear_screen(self):
-        os.system("cls" if os.name == "nt" else "clear")  # 清屏命令,跨平台
+        os.system("cls" if os.name == "nt" else "clear")
         sys.stdout.flush()
         
     def hide_cursor(self):
         sys.stdout.write("\033[?25l")  # 隐藏光标
         
-    def render_frame(self, frame_index):
+    def get_terminal_size(self):
         """
-        在终端中渲染指定帧(彩色)，防止屏幕闪烁
+        获取终端的宽高
+        """
+        return os.get_terminal_size()
+
+    def render_frame(self, frame_index, term_width, term_height):
+        """
+        在终端中渲染指定帧，使用 ANSI 转义序列打印彩色字符
+        使用 ANSI 转义序列移动光标而不是清屏，避免屏幕闪烁
+        接受终端宽高参数，使得渲染的字符画在终端居中，超出终端的部分不渲染，只渲染终端内的部分
         """
         # 使用 ANSI 转义序列移动光标而不是清屏 -> 避免屏幕闪烁
         sys.stdout.write("\033[H")  # 将光标移动到左上角
         ascii_frame = self.ascii_frames[frame_index]
         color_frame = self.color_frames[frame_index]
-        
+
+        # 计算居中显示的起始位置
+        start_row = max((term_height - ascii_frame.shape[0]) // 2, 0)
+        start_col = max((term_width - ascii_frame.shape[1]) // 2, 0)
+
         for i, row in enumerate(ascii_frame):
+            if start_row + i >= term_height:
+                break
             for j, char in enumerate(row):
+                if start_col + j >= term_width:
+                    break
                 b, g, r = color_frame[i, j]
-                sys.stdout.write(f"\033[38;2;{r};{g};{b}m{char}")
+                sys.stdout.write(f"\033[{start_row + i};{start_col + j}H\033[38;2;{r};{g};{b}m{char}")
             sys.stdout.write("\n")
         sys.stdout.flush()
 
@@ -247,6 +273,7 @@ class AsciiVideoPlayer:
         self.clear_screen()  # 只在播放开始时清屏
         self.hide_cursor()  # 播放开始时隐藏光标
         
+        current_term_width, current_term_height = self.get_terminal_size()  # 初始的终端宽高
         start_time = time.perf_counter()
         
         #！ 播放视频时，此处可以使用简单的循环来控制播放和暂停，但是为了形式一致，使用了条件变量
@@ -262,11 +289,21 @@ class AsciiVideoPlayer:
             if current_frame_index >= self.frame_count:  # 播放结束
                 break
             if current_frame_index != self.frame_index:  # 渲染新帧,保持同步（可能打印的次数比实际帧数多，但是视觉上没有问题）
-                self.render_frame(current_frame_index)
+                
+                # 获取终端宽高, 如果终端大小改变，则需要清屏
+                new_term_width, new_term_height = self.get_terminal_size()
+                if new_term_width != current_term_width or new_term_height != current_term_height:
+                    self.clear_screen()
+                    current_term_width, current_term_height = new_term_width, new_term_height
+                
+                self.render_frame(current_frame_index, new_term_width, new_term_height)
                 self.frame_index = current_frame_index
         self.playing = False
+        print("播放结束, 按任意键退出")
     
     def play(self):
+        self.playing = False
+        self.pause = False
         # instructions
         print("按 p 暂停/播放")
         print("按 q 退出")
@@ -278,7 +315,6 @@ class AsciiVideoPlayer:
         video_thread = threading.Thread(target=self.play_video)
         video_thread.start()
         
-        
         # 主线程等待用户信号
         while self.playing:   # 播放中,如果播放结束了，会自动退出循环
             try:
@@ -287,7 +323,7 @@ class AsciiVideoPlayer:
                     self.pause = not self.pause
                     if not self.pause:
                         with self.pause_cond:
-                            self.pause_cond.notify_all()
+                            self.pause_cond.notify_all()  # 必须用 notify_all()，同时唤醒播放和音频线程
                 elif user_input == "q":
                     self.playing = False
                     break
@@ -295,14 +331,13 @@ class AsciiVideoPlayer:
                 self.playing = False
                 break
         
-        
         audio_thread.join()
         video_thread.join()
-        
+    
         print("播放结束")
 
 if __name__ == "__main__":
-    video_path = "./badapple.mp4"
+    video_path = "./resources/badapple.mp4"
     new_width = 100
     cache_dir = "./cache"
     ascii_process = AsciiProcess(video_path, new_width, cache_dir)
@@ -311,6 +346,4 @@ if __name__ == "__main__":
     ascii_player = AsciiVideoPlayer(ascii_path, color_path, audio_path, metadata_path)
     
     ascii_player.play()
-    print("播放结束, 按任意键退出")
-    getwch()
 
