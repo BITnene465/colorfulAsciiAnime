@@ -162,11 +162,11 @@ class AsciiProcess(object):
         
     def brighten_image(self, image):
         """
-        传入BGR图像，把图像亮度增加50%
+        传入BGR图像，提升亮度
         rtype: ndarray(ndim=3, dtype=uint8)
         """
         hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        hsv_image[:, :, 2] = np.minimum(hsv_image[:, :, 2] * 1.5, 255)
+        hsv_image[:, :, 2] = np.minimum(hsv_image[:, :, 2] * 1.3, 255)
         brighter_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
         return brighter_image
     
@@ -346,4 +346,3 @@ if __name__ == "__main__":
     ascii_player = AsciiVideoPlayer(ascii_path, color_path, audio_path, metadata_path)
     
     ascii_player.play()
-
